@@ -75,7 +75,27 @@ PY
 fi
 NET=()
 if [ -n "$QEMU_NET" ] && [ "$QEMU_NET" != 0 ]; then
-	NET=(-netdev user,id=net0 -device virtio-net-device,netdev=net0)
+	# QEMU_HOSTFWD: an inbound forward of QEMU's user network, e.g. tcp::8022-:22 -- the host's
+	# 8022 reaches the guest's 22. Without it the guest can only connect out (to 10.0.2.2).
+	# QEMU_DNS: the name server DHCP hands out (QEMU's default 10.0.2.3 is its own proxy, which
+	# forwards to this machine's resolver; naming one directly takes that hop out).
+	# QEMU_NET_TYPE: "user" (slirp, the default: 10.0.2.15 behind NAT), "tap" (a tap device made
+	# outside and put on a bridge) or "passt" (a real address from the LAN, handed out by the
+	# router's own DHCP -- what a bridge would give, without the bridge).
+	if [ "${QEMU_NET_TYPE:-user}" = tap ]; then
+		# A tap device made by hand and put on a bridge (libvirt's virbr0, say). Creating one needs
+		# CAP_NET_ADMIN, which an unprivileged QEMU does not have, so it is made once, outside:
+		#   sudo ip tuntap add dev tap-hackios mode tap user $USER
+		#   sudo ip link set tap-hackios master virbr0
+		#   sudo ip link set tap-hackios up
+		# The guest then gets an address from that bridge's own DHCP and is reachable from the
+		# host -- and from every other machine on the bridge -- without a forward.
+		NET=(-netdev "tap,id=net0,ifname=${QEMU_TAP_IF:-tap-hackios},script=no,downscript=no" -device virtio-net-device,netdev=net0)
+	elif [ "${QEMU_NET_TYPE:-user}" = passt ]; then
+		NET=(-netdev "passt,id=net0${QEMU_PASST_OPTS:+,$QEMU_PASST_OPTS}" -device virtio-net-device,netdev=net0)
+	else
+		NET=(-netdev "user,id=net0${QEMU_HOSTFWD:+,hostfwd=$QEMU_HOSTFWD}${QEMU_DNS:+,dns=$QEMU_DNS}" -device virtio-net-device,netdev=net0)
+	fi
 	CMDLINE="virtio_net=1 $CMDLINE"
 fi
 # the sound device (QEMU 8.2 or newer has one for this machine): the kernel's sink for /dev/hakios-audio
