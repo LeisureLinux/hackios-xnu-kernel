@@ -59,8 +59,18 @@ dst = os.open(sys.argv[2], os.O_RDWR | os.O_CREAT | os.O_TRUNC, 0o644)
 offset, size = int(sys.argv[3]), int(sys.argv[4])
 os.ftruncate(dst, size)
 total, done = os.fstat(src).st_size, 0
-while done < total:
-    done += os.copy_file_range(src, dst, total - done, done, offset + done)
+if hasattr(os, 'copy_file_range'):
+    while done < total:
+        done += os.copy_file_range(src, dst, total - done, done, offset + done)
+else:
+    # some pythons (conda's, among them) build without copy_file_range; read and write instead
+    while done < total:
+        piece = os.pread(src, 1 << 20, done)
+        if not piece:
+            break
+        os.pwrite(dst, piece, offset + done)
+        done += len(piece)
+assert done == total, (done, total)
 PY
 fi
 NET=()
