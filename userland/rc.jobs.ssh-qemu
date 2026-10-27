@@ -1,0 +1,23 @@
+# Commands run by the launchd job com.hakios.demo (see com.hakios.demo.plist).
+# A way in under QEMU (RC_JOBS=rc.jobs.ssh-qemu): the virtio network device (boot-arg
+# virtio_net=1, which qemu/run-ios.sh adds when QEMU_NET=1), then sshd of the package
+# manager's prefix. rc.jobs.ssh is the same thing on the phone, where the radio supplies en0;
+# here it is QEMU's device, and two things differ:
+#
+#   dhcp          The kernel's en0 comes up without IFF_UP: bsd/dev/hakios.net.c sets only
+#                 BROADCAST|MULTICAST|SIMPLEX. QEMU's user-network DHCP answers only a client
+#                 that asks, and nothing asks while the interface is down, so the address never
+#                 arrives on its own. configd's IPConfiguration is the path that does bring it up
+#                 (the driver answers SIOCSIFADDR/SIOCSIFFLAGS), and net_test dhcp asks it.
+#                 A rootless ifconfig cannot: it has to run before the interface is usable.
+#   awk           gawk's own postinst makes /var/jb/usr/bin/awk; tools/jb-preinstall.py unpacks
+#                 files and runs no script, so the symlink is made here. neofetch wants awk.
+#
+# StrictModes=no: sshd refuses a login when a parent of the home directory is group-writable, and
+# this root filesystem's / is 0775. rc.jobs.ssh has no such option and does not need one -- on the
+# phone the root is a grafted prefix whose parents are root-owned.
+/redwood/bin/net_test dhcp en0
+/redwood/bin/net_test waitaddr en0 90
+/redwood/bin/net_test show
+/var/jb/usr/bin/ln -sf /jb/usr/bin/gawk /var/jb/usr/bin/awk
+/var/jb/usr/sbin/sshd -D -e -h /var/root/.ssh/ssh_host_ed25519_key -o UsePAM=no -o PasswordAuthentication=no -o PermitRootLogin=prohibit-password -o AuthorizedKeysFile=/var/root/.ssh/authorized_keys -o StrictModes=no &
